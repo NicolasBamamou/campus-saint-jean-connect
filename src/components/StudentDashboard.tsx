@@ -1,11 +1,16 @@
-
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { BookOpen, Calendar, Trophy, Bell } from "lucide-react";
+import { BookOpen, Calendar, Trophy, Bell, Edit } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { Progress } from "@/components/ui/progress";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { motion } from "framer-motion";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { EditProfile } from "./EditProfile";
+import { Button } from "@/components/ui/button";
+import { UserProfileCard } from "./UserProfileCard";
 
 interface Profile {
   id: string;
@@ -14,10 +19,6 @@ interface Profile {
   email: string;
   role: 'student' | 'teacher' | 'admin';
   profile_picture_url?: string;
-}
-
-interface StudentDashboardProps {
-  user: Profile;
 }
 
 interface Grade {
@@ -40,7 +41,7 @@ interface Course {
   };
   classes: {
     name: string;
-    teacher_profiles: {
+    profiles: {
       first_name: string;
       last_name: string;
     };
@@ -54,15 +55,26 @@ interface Attendance {
   total: number;
 }
 
+interface StudentDashboardProps {
+  user: Profile;
+}
+
+const StatCard = ({ icon: Icon, title, value, color }: { icon: React.ElementType, title: string, value: string | number, color: string }) => (
+    <Card className="shadow-sm hover:shadow-md transition-shadow">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">{title}</CardTitle>
+            <Icon className={`h-5 w-5 ${color}`} />
+        </CardHeader>
+        <CardContent>
+            <div className="text-2xl font-bold">{value}</div>
+        </CardContent>
+    </Card>
+);
+
 const StudentDashboard = ({ user }: StudentDashboardProps) => {
   const [grades, setGrades] = useState<Grade[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
-  const [attendance, setAttendance] = useState<Attendance>({
-    present: 0,
-    absent: 0,
-    late: 0,
-    total: 0
-  });
+  const [attendance, setAttendance] = useState<Attendance>({ present: 0, absent: 0, late: 0, total: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -87,7 +99,7 @@ const StudentDashboard = ({ user }: StudentDashboardProps) => {
         .order('date_assigned', { ascending: false })
         .limit(5);
 
-      if (gradesData) setGrades(gradesData);
+      if (gradesData) setGrades(gradesData as Grade[]);
 
       // Fetch student's courses through student_classes
       const { data: studentClassesData } = await supabase
@@ -128,7 +140,9 @@ const StudentDashboard = ({ user }: StudentDashboardProps) => {
 
       if (attendanceData) {
         const stats = attendanceData.reduce((acc, record) => {
-          acc[record.status as keyof Attendance]++;
+          if (record.status === 'present' || record.status === 'absent' || record.status === 'late') {
+            acc[record.status]++;
+          }
           acc.total++;
           return acc;
         }, { present: 0, absent: 0, late: 0, total: 0 });
@@ -144,188 +158,123 @@ const StudentDashboard = ({ user }: StudentDashboardProps) => {
   };
 
   const calculateAverage = () => {
-    if (grades.length === 0) return 0;
+    if (grades.length === 0) return "N/A";
     const sum = grades.reduce((acc, grade) => acc + grade.grade_value, 0);
     return (sum / grades.length).toFixed(1);
   };
+  
+  const attendancePercentage = attendance.total > 0 ? Math.round((attendance.present / attendance.total) * 100) : 0;
 
   if (loading) {
-    return (
-      <div className="container mx-auto px-4 py-6">
-        <div className="text-center">Chargement des données...</div>
-      </div>
-    );
+    return <div className="text-center p-8">Chargement des données...</div>;
   }
 
+  const getGradeBadgeVariant = (grade: number): "default" | "secondary" | "destructive" => {
+    if (grade >= 14) return "default"; // Corresponds to 'success'
+    if (grade >= 10) return "secondary"; // Corresponds to 'warning'
+    return "destructive";
+  };
+
   return (
-    <div className="container mx-auto px-4 py-6 space-y-6">
-      {/* Profile Section */}
-      <Card className="border-green-200">
-        <CardContent className="p-6">
-          <div className="flex items-center space-x-4">
-            <Avatar className="h-20 w-20">
-              <AvatarImage src={user.profile_picture_url} />
-              <AvatarFallback className="bg-green-100 text-green-600 text-xl">
-                {user.first_name[0]}{user.last_name[0]}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold text-green-800">{user.first_name} {user.last_name}</h2>
-              <p className="text-gray-600">Élève - Année scolaire 2023-2024</p>
-              <Badge className="mt-2 bg-green-100 text-green-800">
-                Moyenne générale: {calculateAverage()}/20
-              </Badge>
-            </div>
+    <motion.div 
+      className="min-h-screen bg-gradient-to-br from-gray-50 via-green-50 to-purple-50 pb-20 space-y-8"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
+      <div className="max-w-6xl mx-auto py-12 px-4 sm:px-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-10">
+          <div>
+            <h1 className="text-4xl font-extrabold bg-gradient-to-r from-green-700 via-purple-500 to-green-400 bg-clip-text text-transparent drop-shadow-lg mb-2">Tableau de bord Étudiant</h1>
+            <p className="text-gray-500 text-lg">Bienvenue, {user.first_name}!</p>
           </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Left Column */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Recent Grades */}
-          <Card className="border-green-200">
-            <CardHeader className="bg-green-50">
-              <CardTitle className="flex items-center space-x-2 text-green-800">
-                <Trophy className="h-5 w-5" />
-                <span>Notes Récentes</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {grades.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Matière</th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Note</th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Type</th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {grades.map((grade) => (
-                        <tr key={grade.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium text-gray-900">
-                            {grade.courses.subjects.name}
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge variant={grade.grade_value >= 14 ? "default" : grade.grade_value >= 10 ? "secondary" : "destructive"}>
-                              {grade.grade_value}/20
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-3 text-gray-600 capitalize">{grade.grade_type}</td>
-                          <td className="px-4 py-3 text-gray-600">
-                            {new Date(grade.date_assigned).toLocaleDateString('fr-FR')}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="p-6 text-center text-gray-500">
-                  Aucune note disponible
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Courses */}
-          <Card className="border-green-200">
-            <CardHeader className="bg-green-50">
-              <CardTitle className="flex items-center space-x-2 text-green-800">
-                <BookOpen className="h-5 w-5" />
-                <span>Mes Matières</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
-              {courses.length > 0 ? (
-                <div className="grid md:grid-cols-2 gap-4">
-                  {courses.map((course) => (
-                    <Card key={course.id} className="border-gray-200 hover:shadow-md transition-shadow">
-                      <CardContent className="p-4">
-                        <h3 className="font-semibold text-gray-900">{course.subjects.name}</h3>
-                        <p className="text-sm text-gray-600 mb-2">
-                          {course.classes.teacher_profiles?.first_name} {course.classes.teacher_profiles?.last_name}
-                        </p>
-                        <div className="flex justify-between items-center">
-                          <Badge className="bg-green-100 text-green-800">
-                            Coef. {course.subjects.coefficient}
-                          </Badge>
-                          <span className="text-sm text-gray-500">
-                            {course.classes.name}
-                          </span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center text-gray-500">
-                  Aucun cours inscrit
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
 
-        {/* Right Column */}
-        <div className="space-y-6">
-          {/* Attendance */}
-          <Card className="border-green-200">
-            <CardHeader className="bg-green-50">
-              <CardTitle className="flex items-center space-x-2 text-green-800">
-                <Calendar className="h-5 w-5" />
-                <span>Présences</span>
-              </CardTitle>
+        {/* Profile & Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-10">
+          <div className="md:col-span-1">
+            <UserProfileCard user={user} />
+          </div>
+          <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <StatCard icon={Trophy} title="Moyenne Générale" value={`${calculateAverage()}/20`} color="text-yellow-500" />
+            <StatCard icon={Calendar} title="Présence" value={`${attendancePercentage}%`} color="text-green-500" />
+            <StatCard icon={BookOpen} title="Matières" value={courses.length} color="text-blue-500" />
+          </div>
+        </div>
+
+        {/* Recent Grades & Courses */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <Card className="shadow-2xl border-0 rounded-2xl bg-white/70 backdrop-blur-lg">
+            <CardHeader className="bg-gradient-to-r from-green-100 via-purple-100 to-green-50 rounded-t-2xl">
+              <CardTitle className="flex items-center gap-2 text-xl font-bold text-gray-700"><Trophy className="text-yellow-500" /> Notes Récentes</CardTitle>
             </CardHeader>
-            <CardContent className="p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">Présent</span>
-                <Badge className="bg-green-100 text-green-800">{attendance.present}</Badge>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">Absent</span>
-                <Badge variant="destructive">{attendance.absent}</Badge>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">Retard</span>
-                <Badge variant="secondary">{attendance.late}</Badge>
-              </div>
-              {attendance.total > 0 && (
-                <div className="pt-2 border-t">
-                  <div className="flex justify-between items-center font-medium">
-                    <span>Taux de présence</span>
-                    <span className="text-green-600">
-                      {((attendance.present / attendance.total) * 100).toFixed(1)}%
-                    </span>
-                  </div>
-                </div>
+            <CardContent>
+              {grades.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Matière</TableHead>
+                      <TableHead>Note</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {grades.map((grade) => (
+                      <TableRow key={grade.id} className="hover:bg-gradient-to-r hover:from-green-50 hover:via-purple-50 hover:to-green-100 transition-colors">
+                        <TableCell className="font-medium">{grade.courses?.subjects?.name || 'N/A'}</TableCell>
+                        <TableCell>
+                          <Badge variant={getGradeBadgeVariant(grade.grade_value)}>
+                            {grade.grade_value}/20
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{grade.grade_type}</TableCell>
+                        <TableCell>{new Date(grade.date_assigned).toLocaleDateString()}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-center text-gray-500 py-8">Aucune note pour le moment.</p>
               )}
             </CardContent>
           </Card>
 
-          {/* Announcements */}
-          <Card className="border-green-200">
-            <CardHeader className="bg-green-50">
-              <CardTitle className="flex items-center space-x-2 text-green-800">
-                <Bell className="h-5 w-5" />
-                <span>Annonces</span>
-              </CardTitle>
+          <Card className="shadow-2xl border-0 rounded-2xl bg-white/70 backdrop-blur-lg">
+            <CardHeader className="bg-gradient-to-r from-green-100 via-purple-100 to-green-50 rounded-t-2xl">
+              <CardTitle className="flex items-center gap-2 text-xl font-bold text-gray-700"><BookOpen className="text-blue-500" /> Mes Matières</CardTitle>
             </CardHeader>
-            <CardContent className="p-4">
-              <div className="text-center text-gray-500">
-                Aucune annonce récente
-              </div>
-              <Button variant="outline" className="w-full mt-4 text-green-600 border-green-600 hover:bg-green-50">
-                Voir toutes les annonces
-              </Button>
+            <CardContent>
+              {courses.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Matière</TableHead>
+                      <TableHead>Enseignant</TableHead>
+                      <TableHead>Coefficient</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {courses.map((course) => (
+                      <TableRow key={course.id} className="hover:bg-gradient-to-r hover:from-green-50 hover:via-purple-50 hover:to-green-100 transition-colors">
+                        <TableCell className="font-medium">{course.subjects?.name || 'N/A'}</TableCell>
+                        <TableCell>
+                          {course.classes?.profiles?.first_name} {course.classes?.profiles?.last_name}
+                        </TableCell>
+                        <TableCell>{course.subjects?.coefficient || 'N/A'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-center text-gray-500 py-8">Aucune matière inscrite.</p>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
