@@ -1,42 +1,34 @@
 
-import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import AuthPage from "@/components/AuthPage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GraduationCap, Users, Calendar, BookOpen, Trophy, Bell } from "lucide-react";
 import StudentDashboard from "@/components/StudentDashboard";
 import TeacherDashboard from "@/components/TeacherDashboard";
 import AdminDashboard from "@/components/AdminDashboard";
+import { useState } from "react";
 
 const Index = () => {
-  const [currentUser, setCurrentUser] = useState<{
-    id: string;
-    name: string;
-    role: 'student' | 'teacher' | 'admin';
-    email: string;
-  } | null>(null);
-  const [loginForm, setLoginForm] = useState({ email: '', password: '', role: 'student' as 'student' | 'teacher' | 'admin' });
+  const { user, profile, loading, signOut } = useAuth();
+  const [showAuth, setShowAuth] = useState(false);
 
-  // Mock login function - will be replaced with Supabase auth
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Mock user data - will be replaced with real authentication
-    setCurrentUser({
-      id: '1',
-      name: loginForm.role === 'student' ? 'Marie Dubois' : loginForm.role === 'teacher' ? 'Prof. Martin' : 'Admin Principal',
-      role: loginForm.role,
-      email: loginForm.email
-    });
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <GraduationCap className="h-12 w-12 text-green-600 mx-auto mb-4 animate-spin" />
+          <p className="text-gray-600">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setLoginForm({ email: '', password: '', role: 'student' });
-  };
+  if (showAuth) {
+    return <AuthPage onBack={() => setShowAuth(false)} />;
+  }
 
-  if (currentUser) {
+  if (user && profile) {
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-green-600 text-white shadow-lg">
@@ -49,17 +41,17 @@ const Index = () => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm">Bienvenue, {currentUser.name}</span>
-              <Button onClick={handleLogout} variant="outline" className="text-green-600 border-white hover:bg-green-50">
+              <span className="text-sm">Bienvenue, {profile.first_name} {profile.last_name}</span>
+              <Button onClick={signOut} variant="outline" className="text-green-600 border-white hover:bg-green-50">
                 Déconnexion
               </Button>
             </div>
           </div>
         </header>
 
-        {currentUser.role === 'student' && <StudentDashboard user={currentUser} />}
-        {currentUser.role === 'teacher' && <TeacherDashboard user={currentUser} />}
-        {currentUser.role === 'admin' && <AdminDashboard user={currentUser} />}
+        {profile.role === 'student' && <StudentDashboard user={profile} />}
+        {profile.role === 'teacher' && <TeacherDashboard user={profile} />}
+        {profile.role === 'admin' && <AdminDashboard user={profile} />}
       </div>
     );
   }
@@ -79,53 +71,21 @@ const Index = () => {
         </div>
 
         <div className="grid md:grid-cols-2 gap-8 items-start">
-          {/* Login Form */}
+          {/* Login Section */}
           <Card className="shadow-xl border-0 bg-white/80 backdrop-blur">
             <CardHeader className="bg-green-600 text-white rounded-t-lg">
-              <CardTitle className="text-center text-xl">Connexion</CardTitle>
+              <CardTitle className="text-center text-xl">Accès au Système</CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <Label htmlFor="role">Type d'utilisateur</Label>
-                  <Select value={loginForm.role} onValueChange={(value: 'student' | 'teacher' | 'admin') => 
-                    setLoginForm(prev => ({ ...prev, role: value }))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="student">Élève</SelectItem>
-                      <SelectItem value="teacher">Enseignant</SelectItem>
-                      <SelectItem value="admin">Administrateur</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={loginForm.email}
-                    onChange={(e) => setLoginForm(prev => ({ ...prev, email: e.target.value }))}
-                    placeholder="votre@email.com"
-                    required
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="password">Mot de passe</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={loginForm.password}
-                    onChange={(e) => setLoginForm(prev => ({ ...prev, password: e.target.value }))}
-                    placeholder="••••••••"
-                    required
-                  />
-                </div>
-                <Button type="submit" className="w-full bg-green-600 hover:bg-green-700">
-                  Se connecter
-                </Button>
-              </form>
+            <CardContent className="p-6 text-center">
+              <p className="text-gray-600 mb-6">
+                Connectez-vous pour accéder à votre espace personnel
+              </p>
+              <Button 
+                onClick={() => setShowAuth(true)}
+                className="w-full bg-green-600 hover:bg-green-700"
+              >
+                Se connecter / S'inscrire
+              </Button>
             </CardContent>
           </Card>
 

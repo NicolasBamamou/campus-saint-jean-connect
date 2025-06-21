@@ -1,53 +1,114 @@
 
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { BookOpen, Users, Calendar, FileText, Plus, Edit } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { BookOpen, Users, Calendar, Plus, Edit } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
-interface User {
+interface Profile {
   id: string;
-  name: string;
-  role: 'student' | 'teacher' | 'admin';
+  first_name: string;
+  last_name: string;
   email: string;
+  role: 'student' | 'teacher' | 'admin';
 }
 
 interface TeacherDashboardProps {
-  user: User;
+  user: Profile;
+}
+
+interface ClassData {
+  id: string;
+  name: string;
+  level: string;
+  student_count: number;
+  subject_name: string;
 }
 
 const TeacherDashboard = ({ user }: TeacherDashboardProps) => {
-  // Mock data - will be replaced with real data from Supabase
-  const teacherInfo = {
-    matiere: "Mathématiques",
-    classes: ["1ère S1", "1ère S2", "Terminale S"],
-    photo: ""
+  const [classes, setClasses] = useState<ClassData[]>([]);
+  const [stats, setStats] = useState({
+    totalStudents: 0,
+    totalClasses: 0,
+    averageGrade: 0,
+    attendanceRate: 0
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchTeacherData();
+  }, [user.id]);
+
+  const fetchTeacherData = async () => {
+    try {
+      // Fetch teacher's courses and classes
+      const { data: coursesData } = await supabase
+        .from('courses')
+        .select(`
+          id,
+          classes!inner(id, name, level),
+          subjects!inner(name)
+        `)
+        .eq('teacher_id', user.id);
+
+      if (coursesData) {
+        // Get student counts for each class
+        const classesWithCounts = await Promise.all(
+          coursesData.map(async (course) => {
+            const { count } = await supabase
+              .from('student_classes')
+              .select('*', { count: 'exact' })
+              .eq('class_id', course.classes.id);
+
+            return {
+              id: course.classes.id,
+              name: course.classes.name,
+              level: course.classes.level,
+              student_count: count || 0,
+              subject_name: course.subjects.name
+            };
+          })
+        );
+
+        setClasses(classesWithCounts);
+
+        // Calculate total students
+        const totalStudents = classesWithCounts.reduce((sum, cls) => sum + cls.student_count, 0);
+        
+        setStats(prev => ({
+          ...prev,
+          totalStudents,
+          totalClasses: classesWithCounts.length
+        }));
+      }
+
+      // Fetch average grades for teacher's courses
+      const { data: gradesData } = await supabase
+        .from('grades')
+        .select('grade_value, courses!inner(teacher_id)')
+        .eq('courses.teacher_id', user.id);
+
+      if (gradesData && gradesData.length > 0) {
+        const avgGrade = gradesData.reduce((sum, grade) => sum + grade.grade_value, 0) / gradesData.length;
+        setStats(prev => ({ ...prev, averageGrade: avgGrade }));
+      }
+
+    } catch (error) {
+      console.error('Error fetching teacher data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const myClasses = [
-    { id: 1, nom: "1ère S1", eleves: 28, prochainCours: "Aujourd'hui 10h00" },
-    { id: 2, nom: "1ère S2", eleves: 25, prochainCours: "Demain 14h00" },
-    { id: 3, nom: "Terminale S", eleves: 22, prochainCours: "Aujourd'hui 15h30" }
-  ];
-
-  const recentActivities = [
-    { action: "Notes ajoutées", classe: "1ère S1", date: "Il y a 2h", type: "grade" },
-    { action: "Présences marquées", classe: "Terminale S", date: "Il y a 3h", type: "attendance" },
-    { action: "Devoir créé", classe: "1ère S2", date: "Hier", type: "assignment" }
-  ];
-
-  const upcomingTasks = [
-    { tache: "Corriger les devoirs de géométrie", classe: "1ère S1", echeance: "Dans 2 jours" },
-    { tache: "Préparer le contrôle de trigonométrie", classe: "Terminale S", echeance: "Dans 1 semaine" },
-    { tache: "Réunion parents-professeurs", classe: "Toutes", echeance: "Vendredi 16h00" }
-  ];
-
-  const quickStats = {
-    totalStudents: 75,
-    averageGrade: 13.2,
-    attendanceRate: 92.5,
-    assignmentsPending: 8
-  };
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-6">
+        <div className="text-center">Chargement des données...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-6 space-y-6">
@@ -57,18 +118,17 @@ const TeacherDashboard = ({ user }: TeacherDashboardProps) => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <Avatar className="h-20 w-20">
-                <AvatarImage src={teacherInfo.photo} />
                 <AvatarFallback className="bg-green-100 text-green-600 text-xl">
-                  {user.name.split(' ').map(n => n[0]).join('')}
+                  {user.first_name[0]}{user.last_name[0]}
                 </AvatarFallback>
               </Avatar>
               <div>
-                <h2 className="text-2xl font-bold text-green-800">{user.name}</h2>
-                <p className="text-gray-600">Professeur de {teacherInfo.matiere}</p>
+                <h2 className="text-2xl font-bold text-green-800">{user.first_name} {user.last_name}</h2>
+                <p className="text-gray-600">Enseignant</p>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {teacherInfo.classes.map((classe, index) => (
-                    <Badge key={index} className="bg-green-100 text-green-800">
-                      {classe}
+                  {classes.map((cls) => (
+                    <Badge key={cls.id} className="bg-green-100 text-green-800">
+                      {cls.name}
                     </Badge>
                   ))}
                 </div>
@@ -89,29 +149,29 @@ const TeacherDashboard = ({ user }: TeacherDashboardProps) => {
         <Card className="border-green-200">
           <CardContent className="p-4 text-center">
             <Users className="h-8 w-8 text-green-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-green-800">{quickStats.totalStudents}</div>
+            <div className="text-2xl font-bold text-green-800">{stats.totalStudents}</div>
             <div className="text-sm text-gray-600">Élèves total</div>
           </CardContent>
         </Card>
         <Card className="border-green-200">
           <CardContent className="p-4 text-center">
             <BookOpen className="h-8 w-8 text-green-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-green-800">{quickStats.averageGrade}</div>
-            <div className="text-sm text-gray-600">Moyenne générale</div>
+            <div className="text-2xl font-bold text-green-800">{stats.totalClasses}</div>
+            <div className="text-sm text-gray-600">Classes</div>
           </CardContent>
         </Card>
         <Card className="border-green-200">
           <CardContent className="p-4 text-center">
             <Calendar className="h-8 w-8 text-green-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-green-800">{quickStats.attendanceRate}%</div>
-            <div className="text-sm text-gray-600">Taux présence</div>
+            <div className="text-2xl font-bold text-green-800">{stats.averageGrade.toFixed(1)}</div>
+            <div className="text-sm text-gray-600">Moyenne générale</div>
           </CardContent>
         </Card>
         <Card className="border-green-200">
           <CardContent className="p-4 text-center">
-            <FileText className="h-8 w-8 text-green-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-green-800">{quickStats.assignmentsPending}</div>
-            <div className="text-sm text-gray-600">Devoirs à corriger</div>
+            <Users className="h-8 w-8 text-green-600 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-green-800">{stats.attendanceRate}%</div>
+            <div className="text-sm text-gray-600">Taux présence</div>
           </CardContent>
         </Card>
       </div>
@@ -127,93 +187,46 @@ const TeacherDashboard = ({ user }: TeacherDashboardProps) => {
                   <Users className="h-5 w-5" />
                   <span>Mes Classes</span>
                 </div>
-                <Button variant="outline" size="sm" className="text-green-600 border-green-600">
-                  <Plus className="h-4 w-4 mr-1" />
-                  Ajouter
-                </Button>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4">
-              <div className="grid gap-4">
-                {myClasses.map((classe) => (
-                  <Card key={classe.id} className="border-gray-200 hover:shadow-md transition-shadow">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-semibold text-gray-900">{classe.nom}</h3>
-                          <p className="text-sm text-gray-600">{classe.eleves} élèves</p>
-                          <p className="text-sm text-green-600 font-medium">{classe.prochainCours}</p>
+              {classes.length > 0 ? (
+                <div className="grid gap-4">
+                  {classes.map((classe) => (
+                    <Card key={classe.id} className="border-gray-200 hover:shadow-md transition-shadow">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{classe.name}</h3>
+                            <p className="text-sm text-gray-600">{classe.student_count} élèves</p>
+                            <p className="text-sm text-green-600 font-medium">{classe.subject_name}</p>
+                          </div>
+                          <div className="flex space-x-2">
+                            <Button variant="outline" size="sm">
+                              <Calendar className="h-4 w-4 mr-1" />
+                              Présences
+                            </Button>
+                            <Button variant="outline" size="sm">
+                              <Edit className="h-4 w-4 mr-1" />
+                              Notes
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex space-x-2">
-                          <Button variant="outline" size="sm">
-                            <Calendar className="h-4 w-4 mr-1" />
-                            Présences
-                          </Button>
-                          <Button variant="outline" size="sm">
-                            <Edit className="h-4 w-4 mr-1" />
-                            Notes
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Recent Activities */}
-          <Card className="border-green-200">
-            <CardHeader className="bg-green-50">
-              <CardTitle className="flex items-center space-x-2 text-green-800">
-                <FileText className="h-5 w-5" />
-                <span>Activités Récentes</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
-              <div className="space-y-4">
-                {recentActivities.map((activity, index) => (
-                  <div key={index} className="flex items-center space-x-3 p-3 border rounded-lg">
-                    <div className={`h-3 w-3 rounded-full ${
-                      activity.type === 'grade' ? 'bg-blue-500' :
-                      activity.type === 'attendance' ? 'bg-green-500' : 'bg-yellow-500'
-                    }`} />
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">{activity.action}</p>
-                      <p className="text-sm text-gray-600">{activity.classe}</p>
-                    </div>
-                    <span className="text-sm text-gray-500">{activity.date}</span>
-                  </div>
-                ))}
-              </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center text-gray-500">
+                  Aucune classe assignée
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
         {/* Right Column */}
         <div className="space-y-6">
-          {/* Upcoming Tasks */}
-          <Card className="border-green-200">
-            <CardHeader className="bg-green-50">
-              <CardTitle className="flex items-center space-x-2 text-green-800">
-                <Calendar className="h-5 w-5" />
-                <span>Tâches à venir</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 space-y-3">
-              {upcomingTasks.map((task, index) => (
-                <div key={index} className="border-l-4 border-green-500 pl-3 py-2">
-                  <h4 className="font-medium text-sm text-gray-900">{task.tache}</h4>
-                  <p className="text-xs text-gray-600">{task.classe}</p>
-                  <p className="text-xs text-green-600 font-medium mt-1">{task.echeance}</p>
-                </div>
-              ))}
-              <Button variant="outline" className="w-full mt-4 text-green-600 border-green-600 hover:bg-green-50">
-                Voir toutes les tâches
-              </Button>
-            </CardContent>
-          </Card>
-
           {/* Quick Actions */}
           <Card className="border-green-200">
             <CardHeader className="bg-green-50">
@@ -231,10 +244,6 @@ const TeacherDashboard = ({ user }: TeacherDashboardProps) => {
               <Button variant="outline" className="w-full justify-start text-green-600 border-green-600 hover:bg-green-50">
                 <Calendar className="h-4 w-4 mr-2" />
                 Marquer présences
-              </Button>
-              <Button variant="outline" className="w-full justify-start text-green-600 border-green-600 hover:bg-green-50">
-                <FileText className="h-4 w-4 mr-2" />
-                Envoyer annonce
               </Button>
             </CardContent>
           </Card>

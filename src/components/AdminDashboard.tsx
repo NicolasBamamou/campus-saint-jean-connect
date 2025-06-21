@@ -1,57 +1,127 @@
 
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Users, BookOpen, Calendar, Settings, Plus, TrendingUp, School, UserPlus } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
-interface User {
+interface Profile {
   id: string;
-  name: string;
-  role: 'student' | 'teacher' | 'admin';
+  first_name: string;
+  last_name: string;
   email: string;
+  role: 'student' | 'teacher' | 'admin';
 }
 
 interface AdminDashboardProps {
-  user: User;
+  user: Profile;
+}
+
+interface SchoolStats {
+  totalStudents: number;
+  totalTeachers: number;
+  totalClasses: number;
+  averageGrade: number;
+  attendanceRate: number;
+}
+
+interface UserData {
+  id: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+  created_at: string;
 }
 
 const AdminDashboard = ({ user }: AdminDashboardProps) => {
-  // Mock data - will be replaced with real data from Supabase
-  const schoolStats = {
-    totalStudents: 342,
-    totalTeachers: 28,
-    totalClasses: 15,
-    averageGrade: 13.8,
-    attendanceRate: 94.2
+  const [stats, setStats] = useState<SchoolStats>({
+    totalStudents: 0,
+    totalTeachers: 0,
+    totalClasses: 0,
+    averageGrade: 0,
+    attendanceRate: 0
+  });
+  const [recentUsers, setRecentUsers] = useState<UserData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchAdminData();
+  }, []);
+
+  const fetchAdminData = async () => {
+    try {
+      // Fetch user statistics
+      const { data: studentsData, count: studentCount } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact' })
+        .eq('role', 'student');
+
+      const { data: teachersData, count: teacherCount } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact' })
+        .eq('role', 'teacher');
+
+      const { data: classesData, count: classCount } = await supabase
+        .from('classes')
+        .select('*', { count: 'exact' });
+
+      // Fetch recent users
+      const { data: recentUsersData } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, role, created_at')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      // Calculate average grade
+      const { data: gradesData } = await supabase
+        .from('grades')
+        .select('grade_value');
+
+      let averageGrade = 0;
+      if (gradesData && gradesData.length > 0) {
+        const sum = gradesData.reduce((acc, grade) => acc + grade.grade_value, 0);
+        averageGrade = sum / gradesData.length;
+      }
+
+      // Calculate attendance rate
+      const { data: attendanceData } = await supabase
+        .from('attendance')
+        .select('status');
+
+      let attendanceRate = 0;
+      if (attendanceData && attendanceData.length > 0) {
+        const presentCount = attendanceData.filter(record => record.status === 'present').length;
+        attendanceRate = (presentCount / attendanceData.length) * 100;
+      }
+
+      setStats({
+        totalStudents: studentCount || 0,
+        totalTeachers: teacherCount || 0,
+        totalClasses: classCount || 0,
+        averageGrade,
+        attendanceRate
+      });
+
+      if (recentUsersData) {
+        setRecentUsers(recentUsersData);
+      }
+
+    } catch (error) {
+      console.error('Error fetching admin data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const recentUsers = [
-    { nom: "Sophie Martin", role: "Élève", classe: "2nde A", dateInscription: "2024-01-15" },
-    { nom: "Pierre Dubois", role: "Enseignant", matiere: "Sciences", dateInscription: "2024-01-10" },
-    { nom: "Claire Bernard", role: "Élève", classe: "1ère L", dateInscription: "2024-01-08" }
-  ];
-
-  const systemAlerts = [
-    { type: "warning", message: "5 élèves ont plus de 3 absences ce mois", urgent: true },
-    { type: "info", message: "Mise à jour système programmée dimanche", urgent: false },
-    { type: "success", message: "Sauvegarde automatique effectuée", urgent: false }
-  ];
-
-  const classesOverview = [
-    { niveau: "6ème", eleves: 78, classes: 3, moyenne: 14.2 },
-    { niveau: "5ème", eleves: 72, classes: 3, moyenne: 13.8 },
-    { niveau: "4ème", eleves: 69, classes: 3, moyenne: 13.1 },
-    { niveau: "3ème", eleves: 65, classes: 3, moyenne: 12.9 },
-    { niveau: "2nde", eleves: 58, classes: 3, moyenne: 13.5 }
-  ];
-
-  const monthlyStats = [
-    { mois: "Oct", eleves: 340, moyenne: 13.5 },
-    { mois: "Nov", eleves: 341, moyenne: 13.7 },
-    { mois: "Déc", eleves: 342, moyenne: 13.8 },
-    { mois: "Jan", eleves: 342, moyenne: 13.8 }
-  ];
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-6">
+        <div className="text-center">Chargement des données...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-6 space-y-6">
@@ -62,11 +132,11 @@ const AdminDashboard = ({ user }: AdminDashboardProps) => {
             <div className="flex items-center space-x-4">
               <Avatar className="h-20 w-20">
                 <AvatarFallback className="bg-green-100 text-green-600 text-xl">
-                  {user.name.split(' ').map(n => n[0]).join('')}
+                  {user.first_name[0]}{user.last_name[0]}
                 </AvatarFallback>
               </Avatar>
               <div>
-                <h2 className="text-2xl font-bold text-green-800">{user.name}</h2>
+                <h2 className="text-2xl font-bold text-green-800">{user.first_name} {user.last_name}</h2>
                 <p className="text-gray-600">Administrateur - Groupe Scolaire Saint Jean</p>
                 <Badge className="mt-2 bg-green-100 text-green-800">
                   Accès complet au système
@@ -92,35 +162,35 @@ const AdminDashboard = ({ user }: AdminDashboardProps) => {
         <Card className="border-green-200">
           <CardContent className="p-4 text-center">
             <Users className="h-8 w-8 text-green-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-green-800">{schoolStats.totalStudents}</div>
+            <div className="text-2xl font-bold text-green-800">{stats.totalStudents}</div>
             <div className="text-sm text-gray-600">Élèves</div>
           </CardContent>
         </Card>
         <Card className="border-green-200">
           <CardContent className="p-4 text-center">
             <School className="h-8 w-8 text-green-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-green-800">{schoolStats.totalTeachers}</div>
+            <div className="text-2xl font-bold text-green-800">{stats.totalTeachers}</div>
             <div className="text-sm text-gray-600">Enseignants</div>
           </CardContent>
         </Card>
         <Card className="border-green-200">
           <CardContent className="p-4 text-center">
             <BookOpen className="h-8 w-8 text-green-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-green-800">{schoolStats.totalClasses}</div>
+            <div className="text-2xl font-bold text-green-800">{stats.totalClasses}</div>
             <div className="text-sm text-gray-600">Classes</div>
           </CardContent>
         </Card>
         <Card className="border-green-200">
           <CardContent className="p-4 text-center">
             <TrendingUp className="h-8 w-8 text-green-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-green-800">{schoolStats.averageGrade}</div>
+            <div className="text-2xl font-bold text-green-800">{stats.averageGrade.toFixed(1)}</div>
             <div className="text-sm text-gray-600">Moyenne école</div>
           </CardContent>
         </Card>
         <Card className="border-green-200">
           <CardContent className="p-4 text-center">
             <Calendar className="h-8 w-8 text-green-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-green-800">{schoolStats.attendanceRate}%</div>
+            <div className="text-2xl font-bold text-green-800">{stats.attendanceRate.toFixed(1)}%</div>
             <div className="text-sm text-gray-600">Présences</div>
           </CardContent>
         </Card>
@@ -129,54 +199,6 @@ const AdminDashboard = ({ user }: AdminDashboardProps) => {
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left Column */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Classes Overview */}
-          <Card className="border-green-200">
-            <CardHeader className="bg-green-50">
-              <CardTitle className="flex items-center justify-between text-green-800">
-                <div className="flex items-center space-x-2">
-                  <BookOpen className="h-5 w-5" />
-                  <span>Vue d'ensemble des classes</span>
-                </div>
-                <Button variant="outline" size="sm" className="text-green-600 border-green-600">
-                  <Plus className="h-4 w-4 mr-1" />
-                  Nouvelle classe
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Niveau</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Élèves</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Classes</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Moyenne</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {classesOverview.map((niveau, index) => (
-                      <tr key={index} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium text-gray-900">{niveau.niveau}</td>
-                        <td className="px-4 py-3 text-gray-600">{niveau.eleves}</td>
-                        <td className="px-4 py-3 text-gray-600">{niveau.classes}</td>
-                        <td className="px-4 py-3">
-                          <Badge variant={niveau.moyenne >= 14 ? "default" : niveau.moyenne >= 12 ? "secondary" : "destructive"}>
-                            {niveau.moyenne}/20
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3">
-                          <Button variant="outline" size="sm">Gérer</Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Recent Users */}
           <Card className="border-green-200">
             <CardHeader className="bg-green-50">
@@ -186,63 +208,43 @@ const AdminDashboard = ({ user }: AdminDashboardProps) => {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4">
-              <div className="space-y-4">
-                {recentUsers.map((user, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <Avatar className="h-10 w-10">
-                        <AvatarFallback className="bg-gray-100 text-gray-600">
-                          {user.nom.split(' ').map(n => n[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium text-gray-900">{user.nom}</p>
-                        <p className="text-sm text-gray-600">
-                          {user.role} {user.classe && `- ${user.classe}`} {user.matiere && `- ${user.matiere}`}
+              {recentUsers.length > 0 ? (
+                <div className="space-y-4">
+                  {recentUsers.map((user) => (
+                    <div key={user.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <Avatar className="h-10 w-10">
+                          <AvatarFallback className="bg-gray-100 text-gray-600">
+                            {user.first_name[0]}{user.last_name[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium text-gray-900">{user.first_name} {user.last_name}</p>
+                          <p className="text-sm text-gray-600 capitalize">{user.role}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-500">
+                          {new Date(user.created_at).toLocaleDateString('fr-FR')}
                         </p>
+                        <Button variant="outline" size="sm" className="mt-1">
+                          Gérer
+                        </Button>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-500">{user.dateInscription}</p>
-                      <Button variant="outline" size="sm" className="mt-1">
-                        Gérer
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center text-gray-500">
+                  Aucun nouvel utilisateur
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
         {/* Right Column */}
         <div className="space-y-6">
-          {/* System Alerts */}
-          <Card className="border-green-200">
-            <CardHeader className="bg-green-50">
-              <CardTitle className="flex items-center space-x-2 text-green-800">
-                <Settings className="h-5 w-5" />
-                <span>Alertes système</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 space-y-3">
-              {systemAlerts.map((alert, index) => (
-                <div key={index} className={`p-3 rounded-lg border-l-4 ${
-                  alert.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
-                  alert.type === 'info' ? 'border-blue-500 bg-blue-50' :
-                  'border-green-500 bg-green-50'
-                }`}>
-                  <div className="flex items-start justify-between">
-                    <p className="text-sm text-gray-800">{alert.message}</p>
-                    {alert.urgent && (
-                      <Badge variant="destructive" className="ml-2 text-xs">Urgent</Badge>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
           {/* Quick Management */}
           <Card className="border-green-200">
             <CardHeader className="bg-green-50">
@@ -269,29 +271,6 @@ const AdminDashboard = ({ user }: AdminDashboardProps) => {
                 <Settings className="h-4 w-4 mr-2" />
                 Configuration
               </Button>
-            </CardContent>
-          </Card>
-
-          {/* Monthly Evolution */}
-          <Card className="border-green-200">
-            <CardHeader className="bg-green-50">
-              <CardTitle className="flex items-center space-x-2 text-green-800">
-                <TrendingUp className="h-5 w-5" />
-                <span>Évolution mensuelle</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
-              <div className="space-y-3">
-                {monthlyStats.map((stat, index) => (
-                  <div key={index} className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">{stat.mois}</span>
-                    <div className="text-right">
-                      <div className="text-sm font-medium">{stat.eleves} élèves</div>
-                      <div className="text-xs text-green-600">{stat.moyenne}/20</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </CardContent>
           </Card>
         </div>
