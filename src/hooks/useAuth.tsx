@@ -39,7 +39,11 @@ export const useAuth = () => {
                 .single();
               
               if (!error && profileData) {
-                setProfile(profileData);
+                const typedProfile: Profile = {
+                  ...profileData,
+                  role: profileData.role as 'student' | 'teacher' | 'admin'
+                };
+                setProfile(typedProfile);
               }
             } catch (error) {
               console.error('Error fetching profile:', error);

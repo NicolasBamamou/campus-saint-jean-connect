@@ -89,24 +89,35 @@ const StudentDashboard = ({ user }: StudentDashboardProps) => {
 
       if (gradesData) setGrades(gradesData);
 
-      // Fetch student's courses
-      const { data: coursesData } = await supabase
+      // Fetch student's courses through student_classes
+      const { data: studentClassesData } = await supabase
         .from('student_classes')
         .select(`
-          courses!inner(
-            id,
-            subjects!inner(name, coefficient),
-            classes!inner(
-              name,
-              teacher_profiles:profiles!inner(first_name, last_name)
-            )
-          )
+          class_id
         `)
         .eq('student_id', user.id);
 
-      if (coursesData) {
-        const flatCourses = coursesData.map(item => item.courses).flat();
-        setCourses(flatCourses);
+      if (studentClassesData) {
+        // Get courses for those classes
+        const classIds = studentClassesData.map(sc => sc.class_id);
+        
+        if (classIds.length > 0) {
+          const { data: coursesData } = await supabase
+            .from('courses')
+            .select(`
+              id,
+              subjects!inner(name, coefficient),
+              classes!inner(
+                name,
+                profiles!classes_teacher_id_fkey(first_name, last_name)
+              )
+            `)
+            .in('class_id', classIds);
+
+          if (coursesData) {
+            setCourses(coursesData as Course[]);
+          }
+        }
       }
 
       // Calculate attendance
@@ -236,7 +247,7 @@ const StudentDashboard = ({ user }: StudentDashboardProps) => {
                       <CardContent className="p-4">
                         <h3 className="font-semibold text-gray-900">{course.subjects.name}</h3>
                         <p className="text-sm text-gray-600 mb-2">
-                          {course.classes.teacher_profiles.first_name} {course.classes.teacher_profiles.last_name}
+                          {course.classes.teacher_profiles?.first_name} {course.classes.teacher_profiles?.last_name}
                         </p>
                         <div className="flex justify-between items-center">
                           <Badge className="bg-green-100 text-green-800">
